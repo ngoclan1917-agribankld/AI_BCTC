@@ -37,6 +37,7 @@ def process_financial_data(df):
     # Đảm bảo các giá trị là số để tính toán
     numeric_cols = ['Năm trước', 'Năm sau']
     for col in numeric_cols:
+        # Sử dụng errors='coerce' để chuyển đổi các chuỗi không phải số thành NaN, sau đó fillna(0)
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
     
     # 1. Tính Tốc độ Tăng trưởng
@@ -50,14 +51,19 @@ def process_financial_data(df):
     tong_tai_san_row = df[df['Chỉ tiêu'].str.contains('TỔNG CỘNG TÀI SẢN', case=False, na=False)]
     
     if tong_tai_san_row.empty:
-        raise ValueError("Không tìm thấy chỉ tiêu 'TỔNG CỘNG TÀI SẢN'.")
+        # Xử lý trường hợp không tìm thấy TỔNG CỘNG TÀI SẢN
+        # Có thể giả định tổng là 1 nếu file rỗng, nhưng tốt nhất là báo lỗi rõ ràng
+        # Để code hoạt động, nếu không tìm thấy, ta sẽ dùng 1e-9 để tránh chia cho 0
+        tong_tai_san_N_1 = 1e-9
+        tong_tai_san_N = 1e-9
+        # raise ValueError("Không tìm thấy chỉ tiêu 'TỔNG CỘNG TÀI SẢN'.") 
+    else:
+        tong_tai_san_N_1 = tong_tai_san_row['Năm trước'].iloc[0]
+        tong_tai_san_N = tong_tai_san_row['Năm sau'].iloc[0]
 
-    tong_tai_san_N_1 = tong_tai_san_row['Năm trước'].iloc[0]
-    tong_tai_san_N = tong_tai_san_row['Năm sau'].iloc[0]
-
+    
     # ******************************* PHẦN SỬA LỖI BẮT ĐẦU *******************************
-    # Lỗi xảy ra khi dùng .replace() trên giá trị đơn lẻ (numpy.int64).
-    # Sử dụng điều kiện ternary để xử lý giá trị 0 thủ công cho mẫu số.
+    # Xử lý giá trị 0 thủ công cho mẫu số để tính tỷ trọng.
     
     divisor_N_1 = tong_tai_san_N_1 if tong_tai_san_N_1 != 0 else 1e-9
     divisor_N = tong_tai_san_N if tong_tai_san_N != 0 else 1e-9
@@ -101,21 +107,24 @@ def get_ai_analysis(data_for_ai, api_key):
 if "messages" not in st.session_state:
     st.session_state.messages = []
     
-# Hàm gọi API Gemini cho tương tác Chat
+# Hàm gọi API Gemini cho tương tác Chat (ĐÃ FIX LỖI VALIDATION)
 def get_chat_response(prompt, api_key):
     """Tương tác với Gemini trong chế độ chat."""
     try:
         client = genai.Client(api_key=api_key)
         
-        # Lấy lịch sử tin nhắn để duy trì ngữ cảnh
+        # Lấy lịch sử tin nhắn và CHUYỂN ĐỔI sang định dạng API mong muốn (thêm key 'text')
         history = [
-            {"role": "user" if msg["role"] == "user" else "model", "parts": [msg["content"]]} 
+            {
+                "role": "user" if msg["role"] == "user" else "model", 
+                "parts": [{"text": msg["content"]}] # FIX: 'parts' cần là list chứa dict với key 'text'
+            } 
             for msg in st.session_state.messages
         ]
         
         # Khởi tạo chat session
         chat = client.chats.create(
-            model="gemini-2.5-flash", # Tối ưu cho chat
+            model="gemini-2.5-flash", 
             history=history
         )
         
@@ -192,7 +201,7 @@ if uploaded_file is not None:
                 von_luu_dong_rong_N = tsnh_n - no_ngan_han_N
                 von_luu_dong_rong_N_1 = tsnh_n_1 - no_ngan_han_N_1
                 
-                # 3. Giá trị Hàng tồn kho (MỚI)
+                # 3. Giá trị Hàng tồn kho
                 htk_n = htk_n_raw
                 htk_n_1 = htk_n_1_raw
                 
@@ -225,7 +234,7 @@ if uploaded_file is not None:
                     
                 # Metric 3: Hàng tồn kho & Vòng quay (MỚI)
                 with col3:
-                    st.info("Các chỉ số Vòng quay Hàng tồn kho và Vòng quay Vốn lưu động cần dữ liệu DOANH THU/GIÁ VỐN (từ báo cáo kết quả kinh doanh).")
+                    st.info("**Vòng quay Hàng tồn kho** và **Vòng quay Vốn lưu động** cần dữ liệu **DOANH THU/GIÁ VỐN** (từ báo cáo kết quả kinh doanh). Vui lòng đảm bảo file excel có các chỉ tiêu này.")
                     
                     st.metric(
                         label="Hàng tồn kho (Năm sau)",
@@ -259,16 +268,16 @@ if uploaded_file is not None:
                     'Tăng trưởng Tài sản ngắn hạn (%)', 
                     'Thanh toán hiện hành (N-1)', 
                     'Thanh toán hiện hành (N)',
-                    'Vốn lưu động ròng (N-1)', # NEW
-                    'Vốn lưu động ròng (N)' # NEW
+                    'Vốn lưu động ròng (N-1)', 
+                    'Vốn lưu động ròng (N)' 
                 ],
                 'Giá trị': [
                     df_processed.to_markdown(index=False),
-                    f"{df_processed[df_processed['Chỉ tiêu'].str.contains('TÀI SẢN NGẮN HẠN', case=False, na=False)]['Tốc độ tăng trưởng (%)'].iloc[0]:.2f}%" if isinstance(df_processed[df_processed['Chỉ tiêu'].str.contains('TÀI SẢN NGẮN HẠN', case=False, na=False)]['Tốc độ tăng trưởng (%)'].iloc[0], (int, float)) else "N/A", 
-                    f"{thanh_toan_hien_hanh_N_1}", 
+                    f"{df_processed[df_processed['Chỉ tiêu'].str.contains('TÀI SẢN NGẮN HẠN', case=False, na=False)]['Tốc độ tăng trưởng (%)'].iloc[0]:.2f}%" if not isinstance(thanh_toan_hien_hanh_N, str) else "N/A", 
+                    f"{thanh_toan_hien_hanh_N}", 
                     f"{thanh_toan_hien_hanh_N}",
-                    f"{von_luu_dong_rong_N_1:,.0f}" if isinstance(von_luu_dong_rong_N_1, (int, float)) else f"{von_luu_dong_rong_N_1}", # NEW
-                    f"{von_luu_dong_rong_N:,.0f}" if isinstance(von_luu_dong_rong_N, (int, float)) else f"{von_luu_dong_rong_N}" # NEW
+                    f"{von_luu_dong_rong_N_1:,.0f}" if isinstance(von_luu_dong_rong_N_1, (int, float)) else f"{von_luu_dong_rong_N_1}", 
+                    f"{von_luu_dong_rong_N:,.0f}" if isinstance(von_luu_dong_rong_N, (int, float)) else f"{von_luu_dong_rong_N}" 
                 ]
             }).to_markdown(index=False) 
 

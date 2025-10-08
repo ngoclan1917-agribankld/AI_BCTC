@@ -252,38 +252,3 @@ if prompt := st.chat_input("Nhập câu hỏi của bạn..."):
     st.session_state.messages.append({"role": "assistant", "content": ai_response})
     
 # --- KẾT THÚC KHUNG CHAT TƯƠNG TÁC MỚI ---
-Giải thích về các điểm chính được thêm vào:
-Khởi tạo Session State:
-
-Python
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-Dòng này cực kỳ quan trọng trong Streamlit. Nó tạo một biến messages trong trạng thái phiên làm việc để lưu trữ lịch sử cuộc trò chuyện (từ người dùng và từ AI), giúp AI duy trì ngữ cảnh giữa các lần tương tác.
-
-Hàm get_chat_response:
-
-Python
-
-def get_chat_response(prompt, api_key):
-    # ... logic chuyển đổi lịch sử tin nhắn
-    chat = client.chats.create(
-        model="gemini-2.5-flash", # Sử dụng mô hình cho chat
-        history=history
-    )
-    response = chat.send_message(prompt)
-    # ...
-Hàm này sử dụng phương thức client.chats.create của thư viện Google GenAI, đây là cách chuẩn để tạo ra một luồng hội thoại có khả năng nhớ (stateful chat) thay vì chỉ gọi API một lần (stateless content generation).
-
-Giao diện Chat:
-
-Python
-
-# Hiển thị lịch sử chat
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# Xử lý input từ người dùng
-if prompt := st.chat_input("Nhập câu hỏi của bạn..."):
-    # ... logic xử lý khi gửi tin

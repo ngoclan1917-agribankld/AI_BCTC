@@ -53,7 +53,7 @@ def process_financial_data(df):
     
     return df
 
-# --- Hàm gọi API Gemini ---
+# --- Hàm gọi API Gemini cho Phân Tích Báo Cáo ---
 def get_ai_analysis(data_for_ai, api_key):
     """Gửi dữ liệu phân tích đến Gemini API và nhận nhận xét."""
     try:
@@ -80,6 +80,37 @@ def get_ai_analysis(data_for_ai, api_key):
     except Exception as e:
         return f"Đã xảy ra lỗi không xác định: {e}"
 
+# --- BẮT ĐẦU THÊM KHUNG CHAT GEMINI MỚI ---
+# Khởi tạo state chat
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+    
+# Hàm gọi API Gemini cho tương tác Chat
+def get_chat_response(prompt, api_key):
+    """Tương tác với Gemini trong chế độ chat."""
+    try:
+        client = genai.Client(api_key=api_key)
+        
+        # Lấy lịch sử tin nhắn để duy trì ngữ cảnh
+        history = [
+            {"role": "user" if msg["role"] == "user" else "model", "parts": [msg["content"]]} 
+            for msg in st.session_state.messages
+        ]
+        
+        # Khởi tạo chat session
+        chat = client.chats.create(
+            model="gemini-2.5-flash", # Tối ưu cho chat
+            history=history
+        )
+        
+        # Gửi tin nhắn mới
+        response = chat.send_message(prompt)
+        return response.text
+    
+    except APIError as e:
+        return f"Lỗi gọi Gemini API: Vui lòng kiểm tra Khóa API hoặc giới hạn sử dụng. Chi tiết lỗi: {e}"
+    except Exception as e:
+        return f"Đã xảy ra lỗi không xác định trong chat: {e}"
 
 # --- Chức năng 1: Tải File ---
 uploaded_file = st.file_uploader(
@@ -88,6 +119,7 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
+    # Phần còn lại của logic xử lý file và tính toán không thay đổi...
     try:
         df_raw = pd.read_excel(uploaded_file)
         
@@ -183,3 +215,75 @@ if uploaded_file is not None:
 
 else:
     st.info("Vui lòng tải lên file Excel để bắt đầu phân tích.")
+
+# --- BẮT ĐẦU KHUNG CHAT TƯƠNG TÁC MỚI ---
+
+st.divider()
+
+st.subheader("6. Chat với Gemini AI 💬")
+st.caption("Hãy hỏi Gemini về các thuật ngữ tài chính, hoặc yêu cầu nó giải thích thêm về kết quả phân tích ở trên.")
+
+# Hiển thị lịch sử chat
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# Xử lý input từ người dùng
+if prompt := st.chat_input("Nhập câu hỏi của bạn..."):
+    
+    # 1. Lưu và hiển thị tin nhắn của người dùng
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    
+    # 2. Gọi API và hiển thị phản hồi của Gemini
+    api_key = st.secrets.get("GEMINI_API_KEY")
+    
+    if not api_key:
+        st.error("Không tìm thấy Khóa API để khởi tạo Chat.")
+        ai_response = "Xin lỗi, tôi không thể trả lời. Vui lòng kiểm tra Khóa API 'GEMINI_API_KEY' trong Streamlit Secrets."
+    else:
+        with st.chat_message("assistant"):
+            with st.spinner("Đang nghĩ..."):
+                ai_response = get_chat_response(prompt, api_key)
+                st.markdown(ai_response)
+                
+    # 3. Lưu phản hồi của Gemini vào lịch sử
+    st.session_state.messages.append({"role": "assistant", "content": ai_response})
+    
+# --- KẾT THÚC KHUNG CHAT TƯƠNG TÁC MỚI ---
+Giải thích về các điểm chính được thêm vào:
+Khởi tạo Session State:
+
+Python
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+Dòng này cực kỳ quan trọng trong Streamlit. Nó tạo một biến messages trong trạng thái phiên làm việc để lưu trữ lịch sử cuộc trò chuyện (từ người dùng và từ AI), giúp AI duy trì ngữ cảnh giữa các lần tương tác.
+
+Hàm get_chat_response:
+
+Python
+
+def get_chat_response(prompt, api_key):
+    # ... logic chuyển đổi lịch sử tin nhắn
+    chat = client.chats.create(
+        model="gemini-2.5-flash", # Sử dụng mô hình cho chat
+        history=history
+    )
+    response = chat.send_message(prompt)
+    # ...
+Hàm này sử dụng phương thức client.chats.create của thư viện Google GenAI, đây là cách chuẩn để tạo ra một luồng hội thoại có khả năng nhớ (stateful chat) thay vì chỉ gọi API một lần (stateless content generation).
+
+Giao diện Chat:
+
+Python
+
+# Hiển thị lịch sử chat
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# Xử lý input từ người dùng
+if prompt := st.chat_input("Nhập câu hỏi của bạn..."):
+    # ... logic xử lý khi gửi tin
